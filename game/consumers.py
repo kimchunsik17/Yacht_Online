@@ -47,7 +47,7 @@ class GameConsumer(AsyncWebsocketConsumer):
                 self.channel_name
             )
 
-            await self.accept()
+            await self.accept() 
             
             player_id = self.match.current_turn_player.id if self.match.current_turn_player else None
             await self.send_game_state_to_channel(self.game_session.game_state, player_id)
@@ -74,9 +74,13 @@ class GameConsumer(AsyncWebsocketConsumer):
             data = json.loads(text_data)
             action = data.get('action')
             
-            # Reload game data to check turn validity
+            # OPTIMIZATION: Load game data ONCE per request
             self.game_session, self.match = await self.get_game_data(self.room_name)
             
+            if not self.game_session or not self.match:
+                 await self.send_error("Game session not found.")
+                 return
+
             current_player_id = self.scope['user'].id if self.scope['user'].is_authenticated else None
             match_turn_id = self.match.current_turn_player.id if self.match.current_turn_player else None
             
@@ -108,8 +112,9 @@ class GameConsumer(AsyncWebsocketConsumer):
     async def handle_roll(self, data):
         keep_indices = data.get('keep_indices', [])
         
-        # Reload state ensures we are working with latest data
-        self.game_session, self.match = await self.get_game_data(self.room_name)
+        # OPTIMIZATION: Removed redundant get_game_data call
+        # self.game_session and self.match are already populated in receive()
+        
         engine = YachtGameEngine.from_dict(self.game_session.game_state)
         
         try:
@@ -129,7 +134,8 @@ class GameConsumer(AsyncWebsocketConsumer):
     async def handle_select_score(self, data):
         category = data.get('category')
         
-        self.game_session, self.match = await self.get_game_data(self.room_name)
+        # OPTIMIZATION: Removed redundant get_game_data call
+        
         engine = YachtGameEngine.from_dict(self.game_session.game_state)
         
         try:
@@ -142,6 +148,10 @@ class GameConsumer(AsyncWebsocketConsumer):
             
             # Change turn
             await self.set_next_turn()
+            
+            # Refresh match object after turn change to ensure we have the correct current_turn_player
+            # self.match is updated inside set_next_turn, but we need to ensure local ref is good?
+            # actually set_next_turn updates self.match
             
             player_id = self.match.current_turn_player.id if self.match.current_turn_player else None
             await self.send_game_state_to_group(engine.to_dict(), player_id)

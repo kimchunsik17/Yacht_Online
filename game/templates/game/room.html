@@ -19,6 +19,7 @@
             font-size: 24px;
             cursor: pointer;
             background-color: #f0f0f0;
+            user-select: none;
         }
         .dice.kept {
             background-color: lightblue;
@@ -27,6 +28,10 @@
         .dice.disabled {
             opacity: 0.5;
             cursor: not-allowed;
+        }
+        .dice.rolling {
+            color: #555;
+            background-color: #e0e0e0;
         }
         #rolls-left {
             font-weight: bold;
@@ -118,6 +123,7 @@
         const roomName = JSON.parse(document.getElementById('room-name').textContent);
         const scoreCategories = JSON.parse(document.getElementById('score-categories').textContent);
         const currentUserId = JSON.parse(document.getElementById('current-user-id').textContent);
+        const wsStatusDisplay = document.getElementById('ws-status');
         
         const diceDisplay = document.getElementById('dice-display');
         const rollDiceButton = document.getElementById('roll-dice-button');
@@ -135,8 +141,9 @@
         let currentRollsLeft = 3;
         let isGameOver = false;
         let currentTurnPlayerId = null;
-
-        const wsStatusDisplay = document.getElementById('ws-status');
+        
+        let isRolling = false;
+        let shuffleInterval = null;
 
         const chatSocket = new WebSocket(
             'ws://'
@@ -160,6 +167,11 @@
                 console.log("Game State Received:", data.state);
                 document.querySelector('#chat-log').value += ("Game State Update: Round " + data.state.round + "\n");
                 
+                // Stop animation if it's running
+                if (isRolling) {
+                    stopShuffleAnimation();
+                }
+
                 // Update UI with new game state
                 currentDice = data.state.dice;
                 currentRollsLeft = data.state.rolls_left;
@@ -186,6 +198,7 @@
                 updateScoreboardDisplay();
                 updateGameControls();
                 
+                // Reset kept dice if it's a new turn (rollsLeft is 3)
                 if (currentRollsLeft === 3 && keptDiceIndices.length > 0) { 
                     keptDiceIndices = []; 
                     updateDiceDisplay(); 
@@ -194,6 +207,8 @@
             } else if (data.type === 'error') {
                 alert('Server Error: ' + data.message);
                 document.querySelector('#chat-log').value += ("ERROR: " + data.message + '\n');
+                if (isRolling) stopShuffleAnimation(); // Stop animation on error
+                updateGameControls(); // Re-enable buttons
             }
         };
 
@@ -210,29 +225,43 @@
              console.error('WebSocket error observed:', e);
         };
 
-        function updateDiceDisplay() {
-            diceDisplay.innerHTML = ''; // Clear existing dice
-            currentDice.forEach((value, index) => {
+        function renderDice(diceValues, keptIndices) {
+            diceDisplay.innerHTML = ''; 
+            diceValues.forEach((value, index) => {
                 const diceDiv = document.createElement('div');
                 diceDiv.classList.add('dice');
-                if (keptDiceIndices.includes(index)) {
+                if (keptIndices.includes(index)) {
                     diceDiv.classList.add('kept');
                 }
-                // Disable dice keeping if no rolls left, game over, or not current user's turn
-                if (currentRollsLeft === 0 || isGameOver || currentTurnPlayerId !== currentUserId) {
+                if (isRolling && !keptIndices.includes(index)) {
+                    diceDiv.classList.add('rolling');
+                }
+                
+                // Disable interaction if not allowed
+                // Allow interaction only if: rolls left > 0, game active, user's turn, AND not currently animating
+                const canInteract = (currentRollsLeft > 0 && !isGameOver && currentTurnPlayerId === currentUserId && !isRolling);
+                
+                if (!canInteract && !isRolling) { // Don't gray out during rolling animation
                     diceDiv.classList.add('disabled');
-                } else {
+                }
+                
+                if (canInteract) {
                     diceDiv.addEventListener('click', () => toggleKeepDice(index));
                 }
+                
                 diceDiv.dataset.index = index;
                 diceDiv.textContent = value;
                 diceDisplay.appendChild(diceDiv);
             });
         }
 
+        function updateDiceDisplay() {
+            renderDice(currentDice, keptDiceIndices);
+        }
+
         function toggleKeepDice(index) {
             // Only allow toggling if rolls are left and game is not over and it's current user's turn
-            if (currentRollsLeft > 0 && !isGameOver && currentTurnPlayerId === currentUserId) {
+            if (currentRollsLeft > 0 && !isGameOver && currentTurnPlayerId === currentUserId && !isRolling) {
                 const diceIndex = keptDiceIndices.indexOf(index);
                 if (diceIndex > -1) {
                     keptDiceIndices.splice(diceIndex, 1); // Remove from kept
@@ -243,8 +272,36 @@
             }
         }
 
+        function startShuffleAnimation(keepIndices) {
+            isRolling = true;
+            // Visual feedback: Update rolls left optimistically
+            if (currentRollsLeft > 0) {
+                rollsLeftDisplay.textContent = `Rolls Left: ${currentRollsLeft - 1}`;
+            }
+            
+            shuffleInterval = setInterval(() => {
+                const tempDice = [];
+                for(let i=0; i<5; i++) {
+                    if (keepIndices.includes(i)) {
+                        tempDice.push(currentDice[i]); // Keep stored value
+                    } else {
+                        tempDice.push(Math.floor(Math.random() * 6) + 1); // Random value
+                    }
+                }
+                renderDice(tempDice, keepIndices);
+            }, 80);
+        }
+
+        function stopShuffleAnimation() {
+            clearInterval(shuffleInterval);
+            isRolling = false;
+        }
+
         rollDiceButton.onclick = function() {
-            if (currentRollsLeft > 0 && !isGameOver && currentTurnPlayerId === currentUserId) {
+            if (currentRollsLeft > 0 && !isGameOver && currentTurnPlayerId === currentUserId && !isRolling) {
+                startShuffleAnimation(keptDiceIndices);
+                rollDiceButton.disabled = true; // Prevent double click
+                
                 chatSocket.send(JSON.stringify({
                     'action': 'roll',
                     'keep_indices': keptDiceIndices
@@ -259,26 +316,25 @@
                 const scoredValue = currentScores[category];
                 const potentialValue = currentPotentialScores[category] !== undefined ? currentPotentialScores[category] : '';
 
-                row.innerHTML = `
+                row.innerHTML = "`
                     <td>${category}</td>
                     <td>${scoredValue !== null ? scoredValue : '-'}</td>
-                    <td id="potential-${category.replace(/\s/g, '-')}" class="${scoredValue === null ? 'selectable' : 'scored'}" data-category="${category}">${potentialValue}</td>
-                `;
+                    <td id=\"potential-${category.replace(/\s/g, '-')}\" class=\"${scoredValue === null ? 'selectable' : 'scored'}\" data-category=\"${category}\">${potentialValue}</td>
+                `";
                 
                 const potentialCell = row.querySelector(`td[data-category="${category}"]`);
-                // Only allow selecting if not scored, game not over, and it's current user's turn
-                if (scoredValue === null && !isGameOver && currentTurnPlayerId === currentUserId) {
+                // Only allow selecting if not scored, game not over, user's turn, AND not rolling
+                if (scoredValue === null && !isGameOver && currentTurnPlayerId === currentUserId && !isRolling) {
                     potentialCell.addEventListener('click', () => selectScore(category));
                 } else {
-                    potentialCell.classList.add('disabled'); // Visually indicate not selectable
+                    potentialCell.classList.add('disabled');
                 }
                 scoreboardBody.appendChild(row);
             });
         }
 
         function selectScore(category) {
-            // Only allow selecting if game is not over and it's current user's turn
-            if (!isGameOver && currentTurnPlayerId === currentUserId) {
+            if (!isGameOver && currentTurnPlayerId === currentUserId && !isRolling) {
                 chatSocket.send(JSON.stringify({
                     'action': 'select_score',
                     'category': category
@@ -287,8 +343,8 @@
         }
 
         function updateGameControls() {
-            // Roll button disabled if no rolls left, game over, or not user's turn
-            rollDiceButton.disabled = (currentRollsLeft === 0 || isGameOver || currentTurnPlayerId !== currentUserId);
+            // Roll button disabled if no rolls left, game over, not user's turn, or rolling
+            rollDiceButton.disabled = (currentRollsLeft === 0 || isGameOver || currentTurnPlayerId !== currentUserId || isRolling);
 
             if (isGameOver) {
                 gameOverMessage.style.display = 'block';
