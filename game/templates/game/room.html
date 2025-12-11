@@ -3,69 +3,215 @@
 <head>
     <meta charset="utf-8"/>
     <title>Yacht Room</title>
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700&family=Montserrat:wght@400;700&display=swap" rel="stylesheet">
+    <!-- Anime.js -->
     <script src="https://cdn.jsdelivr.net/npm/animejs@3.2.1/lib/anime.min.js"></script>
     <style>
+        body {
+            background-color: #1A1A1A; /* Deep Dark Background */
+            color: #FFFFFF; /* Primary Text */
+            font-family: 'Inter', sans-serif; /* Body font */
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+
+        h1, h2, h3 {
+            font-family: 'Montserrat', sans-serif; /* Title font */
+            color: #FFFFFF;
+        }
+
+        .game-container {
+            width: 100%;
+            max-width: 800px;
+            background: rgba(37, 37, 37, 0.7); /* Surface */
+            backdrop-filter: blur(10px);        /* Glassmorphism */
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 16px;
+            box-shadow: 0 4px 30px rgba(0, 0, 0, 0.5);
+            padding: 30px;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+
+        #ws-status {
+            margin-bottom: 20px;
+            padding: 10px;
+            border-radius: 5px;
+            color: #1A1A1A; /* Dark text for light background */
+            font-weight: bold;
+        }
+        
         .dice-container {
             display: flex;
-            gap: 10px;
-            margin-bottom: 20px;
+            gap: 15px;
+            justify-content: center;
+            margin: 20px 0;
         }
         .dice {
-            width: 50px;
-            height: 50px;
-            border: 2px solid black;
+            width: 60px; /* Slightly larger */
+            height: 60px;
+            border: 2px solid #555; /* Darker border */
+            border-radius: 10px; /* Rounded corners */
             display: flex;
             justify-content: center;
             align-items: center;
-            font-size: 24px;
-            cursor: pointer;
-            background-color: #f0f0f0;
+            font-size: 2.2em; /* Larger font */
+            font-weight: 700;
+            color: #00f2fe; /* Neon Cyan for pips */
+            background-color: #2c2c2c; /* Darker dice background */
             user-select: none;
+            cursor: pointer;
             transform: scale(1) rotate(0deg);
-            transition: background-color 0.2s, border-color 0.2s;
+            transition: all 0.2s ease-out; /* Smooth transitions */
+            font-family: 'Montserrat', sans-serif; /* Use title font for dice */
+            font-variant-numeric: tabular-nums; /* Align numbers */
         }
         .dice.kept {
-            background-color: lightblue;
-            border-color: blue;
+            background: linear-gradient(135deg, #f6d365 0%, #fda085 100%); /* Peach-Orange Gradient */
+            border-color: #f6d365;
+            color: #1A1A1A; /* Dark text for light background */
+            box-shadow: 0 0 10px rgba(246, 211, 101, 0.7); /* Glow effect */
         }
         .dice.disabled {
-            opacity: 0.5;
+            opacity: 0.4;
             cursor: not-allowed;
+            filter: grayscale(80%);
         }
         .dice.rolling {
-            color: #555;
-            background-color: #e0e0e0;
+            /* Anime.js handles actual animation */
         }
+        
         #rolls-left {
             font-weight: bold;
             margin-bottom: 10px;
+            color: #A0A0A0;
         }
+        #current-player-turn {
+            font-size: 1.1em;
+            font-weight: bold;
+            margin-bottom: 15px;
+        }
+
         .scoreboard {
-            width: 500px;
+            width: 100%;
+            max-width: 600px; /* Wider scoreboard */
             border-collapse: collapse;
-            margin-top: 20px;
+            margin: 20px auto;
+            color: #FFFFFF;
         }
         .scoreboard th, .scoreboard td {
-            border: 1px solid black;
-            padding: 8px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            padding: 10px;
             text-align: center;
+            font-family: 'Inter', sans-serif;
+            font-variant-numeric: tabular-nums; /* Align numbers */
+        }
+        .scoreboard th {
+            background-color: #2c2c2c;
+            font-weight: 700;
+        }
+        .scoreboard td {
+            background-color: #1A1A1A;
         }
         .scoreboard td.selectable {
             cursor: pointer;
-            background-color: #ffffcc;
+            background-color: rgba(79, 172, 254, 0.2); /* Blue-Cyan tint */
+            transition: background-color 0.2s;
         }
         .scoreboard td.selectable:hover {
-            background-color: #ffff99;
+            background-color: rgba(79, 172, 254, 0.4);
         }
         .scoreboard td.scored {
-            background-color: #d3d3d3;
+            background-color: #333;
+            color: #A0A0A0;
             cursor: not-allowed;
         }
-        button:disabled {
-            background-color: #cccccc;
+        .scoreboard tfoot td {
+            background-color: #2c2c2c;
+            font-weight: bold;
+        }
+
+        .action-button {
+            padding: 12px 25px;
+            border: none;
+            border-radius: 8px;
+            font-size: 1.1em;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            color: #1A1A1A; /* Dark text for light buttons */
+            margin: 10px;
+        }
+        .action-button:hover {
+            opacity: 0.9;
+            transform: translateY(-2px);
+        }
+        .action-button:disabled {
+            background: #555;
+            color: #888;
             cursor: not-allowed;
+            transform: none;
+        }
+
+        .primary-action-button {
+            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); /* Blue-Cyan Gradient */
+        }
+        .next-btn, .home-btn {
+            background: linear-gradient(135deg, #84fab0 0%, #8fd3f4 100%); /* Mint-Green */
+        }
+        .next-btn:hover, .home-btn:hover {
+            background: linear-gradient(135deg, #7ad19f 0%, #85c2e3 100%);
         }
         
+        .secondary-action-button {
+             background: linear-gradient(135deg, #f6d365 0%, #fda085 100%);
+        }
+
+        #game-over-message {
+            color: #fda085; /* Peach-Orange */
+            font-size: 1.3em;
+        }
+        #match-status-text {
+            color: #00f2fe; /* Blue-Cyan */
+        }
+
+        #chat-log {
+            width: 100%;
+            max-width: 600px;
+            height: 150px;
+            background-color: #2c2c2c;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: #FFFFFF;
+            font-family: 'Inter', sans-serif;
+            padding: 10px;
+            border-radius: 8px;
+            margin-top: 20px;
+            resize: none;
+        }
+        #chat-message-input {
+            width: calc(100% - 120px);
+            max-width: 480px;
+            padding: 10px;
+            border-radius: 8px;
+            border: 1px solid #444;
+            background-color: #252525;
+            color: #FFFFFF;
+            font-size: 1em;
+            margin-top: 10px;
+        }
+        #chat-message-input:focus {
+            outline: none;
+            border-color: #00f2fe;
+        }
+
         /* Modal Styles */
         .modal {
             display: none; 
@@ -76,119 +222,115 @@
             width: 100%; 
             height: 100%; 
             overflow: auto; 
-            background-color: rgba(0,0,0,0.6); 
+            background-color: rgba(0,0,0,0.8); 
         }
         .modal-content {
-            background-color: #fefefe;
-            margin: 15% auto; 
-            padding: 20px;
-            border: 1px solid #888;
-            width: 40%;
+            background-color: #1A1A1A;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            box-shadow: 0 5px 15px rgba(0,0,0,0.7);
+            margin: 10% auto; 
+            padding: 40px;
+            border-radius: 16px;
+            width: 50%;
+            max-width: 500px;
             text-align: center;
-            border-radius: 10px;
+            animation: fadeIn 0.5s;
         }
-        .next-btn {
-            background-color: #4CAF50;
-            color: white;
-            padding: 10px 20px;
-            border: none;
-            cursor: pointer;
-            font-size: 16px;
-            border-radius: 5px;
-            margin-top: 10px;
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(-20px); }
+            to { opacity: 1; transform: translateY(0); }
         }
-        .next-btn:hover {
-            background-color: #45a049;
+        #match-result-title {
+            color: #00f2fe;
+            margin-bottom: 20px;
         }
-        .home-btn {
-            background-color: #2196F3;
-            color: white;
-            padding: 10px 20px;
-            border: none; 
-            cursor: pointer;
-            font-size: 16px;
-            border-radius: 5px;
-            margin-top: 10px;
+        #match-result-message {
+            color: #A0A0A0;
+            font-size: 1.1em;
+            margin-bottom: 30px;
         }
     </style>
 </head>
 <body>
-    <h1>Room: {{ room_name }}</h1>
-    <div id="ws-status" style="background-color: yellow; padding: 5px;">WebSocket Status: Connecting...</div>
+    <div class="game-container">
+        <h1>Room: {{ room_name }}</h1>
+        <div id="ws-status" style="background-color: yellow; padding: 5px;">WebSocket Status: Connecting...</div>
 
-    <div style="margin-top: 10px; padding: 10px; border: 1px solid #ddd; background-color: #f9f9f9;">
-        <h3>Match Score</h3>
-        <div style="font-size: 1.2em;">
-            Me: <span id="my-match-wins">0</span> 
-            vs 
-            Opponent: <span id="op-match-wins">0</span>
+        <div style="margin-top: 20px; padding: 15px; border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 10px; background-color: rgba(0,0,0,0.3);">
+            <h3>Match Score</h3>
+            <div style="font-size: 1.3em; margin-bottom: 5px;">
+                Me: <span id="my-match-wins">0</span> 
+                vs 
+                Opponent: <span id="op-match-wins">0</span>
+            </div>
+            <div id="match-status-text" style="font-weight: bold;">Playing Game 1</div>
         </div>
-        <div id="match-status-text" style="font-weight: bold; color: blue;">Playing Game 1</div>
-    </div>
 
-    <div>
-        <h2>Game State</h2>
-        <div id="current-player-turn">Waiting for game data...</div>
-        <div id="rolls-left">Rolls Left: 3</div>
-        <div class="dice-container" id="dice-display">
-            <!-- Dice will be injected here by JavaScript -->
+        <div>
+            <h2>Game State</h2>
+            <div id="current-player-turn" style="color: #A0A0A0;">Waiting for game data...</div>
+            <div id="rolls-left" style="color: #00f2fe;">Rolls Left: 3</div>
+            <div class="dice-container" id="dice-display">
+                <!-- Dice will be injected here by JavaScript -->
+            </div>
+            <button id="roll-dice-button" class="action-button primary-action-button">Roll Dice</button>
+            
+            <div id="game-over-message" style="color: #fda085; font-size: 1.3em; font-weight: bold; display: none; margin-top: 10px;">
+                GAME OVER!
+            </div>
+            
+            <button id="next-game-button" class="action-button next-btn" style="display: none;">Start Next Game</button>
         </div>
-        <button id="roll-dice-button">Roll Dice</button>
-        
-        <div id="game-over-message" style="color: red; font-weight: bold; display: none; margin-top: 10px;">
-            GAME OVER!
+
+        <hr style="border-color: rgba(255,255,255,0.1);">
+
+        <div>
+            <h2>Scoreboard</h2>
+            <table class="scoreboard">
+                <thead>
+                    <tr>
+                        <th>Category</th>
+                        <th>My Score</th>
+                        <th>Potential</th>
+                        <th>Opponent</th>
+                    </tr>
+                </thead>
+                <tbody id="scoreboard-body">
+                    <!-- Score rows will be injected here by JavaScript -->
+                </tbody>
+                <tfoot>
+                    <tr>
+                        <td>Bonus</td>
+                        <td id="my-bonus-score">0</td>
+                        <td></td>
+                        <td id="op-bonus-score">0</td>
+                    </tr>
+                    <tr>
+                        <td>Total</td>
+                        <td id="my-total-score">0</td>
+                        <td></td>
+                        <td id="op-total-score">0</td>
+                    </tr>
+                </tfoot>
+            </table>
         </div>
-        
-        <!-- Next Game Button -->
-        <button id="next-game-button" class="next-btn" style="display: none;">Start Next Game</button>
-    </div>
 
-    <hr>
+        <hr style="border-color: rgba(255,255,255,0.1);">
 
-    <div>
-        <h2>Scoreboard</h2>
-        <table class="scoreboard">
-            <thead>
-                <tr>
-                    <th>Category</th>
-                    <th>My Score</th>
-                    <th>Potential</th>
-                    <th>Opponent</th>
-                </tr>
-            </thead>
-            <tbody id="scoreboard-body">
-                <!-- Score rows will be injected here by JavaScript -->
-            </tbody>
-            <tfoot>
-                <tr>
-                    <td>Bonus</td>
-                    <td id="my-bonus-score">0</td>
-                    <td></td>
-                    <td id="op-bonus-score">0</td>
-                </tr>
-                <tr>
-                    <td>Total</td>
-                    <td id="my-total-score">0</td>
-                    <td></td>
-                    <td id="op-total-score">0</td>
-                </tr>
-            </tfoot>
-        </table>
-    </div>
+        <h2>Chat</h2>
+        <textarea id="chat-log" readonly></textarea><br>
+        <div style="display: flex; justify-content: center; gap: 10px;">
+            <input id="chat-message-input" type="text" placeholder="Type a message...">
+            <button id="chat-message-submit" class="action-button secondary-action-button" style="margin: 0;">Send</button>
+        </div>
 
-    <hr>
-
-    <h2>Chat</h2>
-    <textarea id="chat-log" cols="100" rows="10"></textarea><br>
-    <input id="chat-message-input" type="text" size="100"><br>
-    <input id="chat-message-submit" type="button" value="Send">
-
-    <!-- Match Result Modal -->
-    <div id="match-result-modal" class="modal">
-        <div class="modal-content">
-            <h2 id="match-result-title">Match Finished</h2>
-            <p id="match-result-message"></p>
-            <button class="home-btn" onclick="window.location.href='/'">Back to Home</button>
+        <!-- Match Result Modal -->
+        <div id="match-result-modal" class="modal">
+            <div class="modal-content">
+                <h2 id="match-result-title">Match Finished</h2>
+                <p id="match-result-message"></p>
+                <button class="action-button home-btn" onclick="window.location.href='/'">Back to Home</button>
+            </div>
         </div>
     </div>
 
@@ -249,7 +391,7 @@
         let isRolling = false;
         let animeAnimation = null; 
 
-        // Helper: Determine if I am Player 1 or Player 2 (Using loose equality for ID match)
+        // Helper: Determine if I am Player 1 or Player 2 (Loose equality)
         const isPlayer1 = (currentUserId == player1Id);
         const myKey = isPlayer1 ? 'player1' : 'player2';
         const opKey = isPlayer1 ? 'player2' : 'player1';
@@ -265,7 +407,8 @@
 
         chatSocket.onopen = function(e) {
             wsStatusDisplay.textContent = "WebSocket Status: Connected";
-            wsStatusDisplay.style.backgroundColor = "lightgreen";
+            wsStatusDisplay.style.backgroundColor = "#84fab0"; // Mint Green
+            wsStatusDisplay.style.color = "#1A1A1A";
             console.log("WebSocket connection established");
         };
 
@@ -273,7 +416,9 @@
             try {
                 const data = JSON.parse(e.data);
                 if (data.type === 'chat') {
-                    document.querySelector('#chat-log').value += (data.message + '\n');
+                    const chatLog = document.querySelector('#chat-log');
+                    chatLog.value += (data.message + '\n');
+                    chatLog.scrollTop = chatLog.scrollHeight;
                 } else if (data.type === 'game_state') {
                     console.log("Game State Received:", data.state);
                     console.log("Turn Player ID:", data.current_turn_player_id, "My ID:", currentUserId);
@@ -295,14 +440,12 @@
                             isMatchFinished = true;
                             showMatchResult(info.winner_id);
                         } else if (info.session_result) {
-                            // Current game finished, show Next Game button
                             isGameOver = true;
                             gameOverMessage.textContent = `Game Over! Result: ${info.session_result}`;
                             gameOverMessage.style.display = 'block';
                             nextGameButton.style.display = 'inline-block';
                         } else {
-                            // Game in progress
-                            isGameOver = false; // Reset if new game started
+                            isGameOver = false;
                             gameOverMessage.style.display = 'none';
                             nextGameButton.style.display = 'none';
                         }
@@ -336,7 +479,6 @@
                         myPotentialScores = {};
                     }
 
-                    // Only update game over flag from state if match logic didn't already set it
                     if (!isGameOver) {
                         isGameOver = activeState.game_over;
                     }
@@ -346,10 +488,10 @@
                     let turnText = "";
                     if (currentTurnPlayerId == currentUserId) {
                         turnText = "It's YOUR turn.";
-                        document.body.style.backgroundColor = "#e6ffe6"; 
+                        document.querySelector('#current-player-turn').style.color = "#84fab0"; // Mint Green
                     } else {
                         turnText = "It's Opponent's turn.";
-                        document.body.style.backgroundColor = "#fff0f0"; 
+                        document.querySelector('#current-player-turn').style.color = "#fda085"; // Peach Orange
                     }
                     currentPlayerTurnDisplay.textContent = turnText;
 
@@ -358,7 +500,6 @@
                     updateGameControls();
                     
                     if (currentTurnPlayerId == currentUserId && currentRollsLeft === 2 && keptDiceIndices.length > 0) { 
-                         // Reset kept indices on new turn (rolls = 2)
                          keptDiceIndices = [];
                          updateDiceDisplay(true);
                     }

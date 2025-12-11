@@ -32,6 +32,16 @@ Django를 기반으로 하며, 실시간 대전(PvP)과 AI 대전(PvE)을 모두
     * *Alternative:* Three.js (3D 주사위가 필요할 경우 사용, 현재는 2D 우선).
 * **Language:** Vanilla JavaScript (ES6+).
 
+### 2.2 Frontend (Design Guidelines)
+* **Theme:** "Dark Luxury" (Inspired by high-end yacht sales pages).
+* **Color Palette:**
+    * Background: `#1A1A1A` (Dark Charcoal).
+    * Accents: Soft Gradients (Blue-Cyan, Peach-Orange) for interactions.
+* **UI Components:**
+    * Glassmorphism cards (semi-transparent backgrounds with blur).
+    * Minimalist typography (Montserrat/Inter).
+    * Clean, bar-style indicators for scores and timers (referencing the 'Manhattan 96' spec bars).
+
 ### 2.3 AI & External API
 * **AI Model:** **Google Gemini Pro** (via Google AI Studio API).
 * **Role:** PvE 모드에서 상대방 플레이어 역할 수행 (주사위 선택 및 점수판 기입 결정).
@@ -136,3 +146,4 @@ Django를 기반으로 하며, 실시간 대전(PvP)과 AI 대전(PvE)을 모두
 * 비동기 코드(`async/await`)는 `consumers.py`와 같은 ASGI 컨텍스트에서만 사용하십시오.
 * 프론트엔드 코드 생성 시, 복잡한 로직보다는 가독성과 Anime.js와의 호환성을 우선하십시오.
 * GCP 배포를 염두에 두고 환경 변수(`.env`) 관리를 철저히 하십시오.
+

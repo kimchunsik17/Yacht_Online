@@ -4,19 +4,113 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Yacht Online</title>
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700&family=Montserrat:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            background-color: #1A1A1A; /* Deep Dark Background */
+            color: #FFFFFF; /* Primary Text */
+            font-family: 'Inter', sans-serif; /* Body font */
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+
+        h1, h2, h3 {
+            font-family: 'Montserrat', sans-serif; /* Title font */
+            color: #FFFFFF;
+        }
+
+        .game-card {
+            background: rgba(37, 37, 37, 0.7); /* Surface */
+            backdrop-filter: blur(10px); /* Glassmorphism */
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 16px;
+            box-shadow: 0 4px 30px rgba(0, 0, 0, 0.5);
+            padding: 30px;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+
+        .button-group {
+            display: flex;
+            gap: 15px;
+            margin-top: 20px;
+        }
+
+        .action-button {
+            padding: 12px 25px;
+            border: none;
+            border-radius: 8px;
+            font-size: 1.1em;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            color: #1A1A1A; /* Dark text for light buttons */
+        }
+        .action-button:hover {
+            opacity: 0.9;
+            transform: translateY(-2px);
+        }
+
+        /* Primary Action Button (Roll) */
+        .primary-action-button {
+            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); /* Blue-Cyan Gradient */
+        }
+
+        /* Secondary Action Button (Enter Room) - can be similar to Next Game */
+        .secondary-action-button {
+            background: linear-gradient(135deg, #f6d365 0%, #fda085 100%); /* Peach-Orange Gradient */
+        }
+        
+        input[type="text"] {
+            padding: 10px;
+            border-radius: 8px;
+            border: 1px solid #444;
+            background-color: #252525;
+            color: #FFFFFF;
+            font-size: 1em;
+            width: 300px;
+            margin-top: 10px;
+        }
+        input[type="text"]:focus {
+            outline: none;
+            border-color: #00f2fe;
+            box-shadow: 0 0 5px rgba(0, 242, 254, 0.5);
+        }
+
+        hr {
+            border: none;
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+            width: 80%;
+            margin: 40px 0;
+        }
+    </style>
 </head>
 <body>
-    <h1>Welcome to Yacht Online!</h1>
-    <p>This is the home page.</p>
-    
-    <form action="/create_match/" method="get">
-        <input type="submit" value="Create New Game">
-    </form>
-    <hr>
-    
-    <label for="room-name-input">What room would you like to enter?</label>
-    <input id="room-name-input" type="text" size="100"><br>
-    <input id="room-name-submit" type="button" value="Enter">
+    <div class="game-card">
+        <h1>Welcome to Yacht Online!</h1>
+        <p style="color: #A0A0A0;">Join a game or create a new one.</p>
+        
+        <div class="button-group">
+            <form action="/create_match/" method="get">
+                <button type="submit" class="action-button primary-action-button">Create New Game</button>
+            </form>
+        </div>
+        
+        <hr>
+        
+        <label for="room-name-input" style="color: #A0A0A0;">Enter an existing room by ID:</label>
+        <input id="room-name-input" type="text" placeholder="Enter Room ID" size="40"><br>
+        <button id="room-name-submit" class="action-button secondary-action-button">Join Room</button>
+    </div>
 
     <script>
         document.querySelector('#room-name-input').focus();
@@ -28,7 +122,11 @@
 
         document.querySelector('#room-name-submit').onclick = function(e) {
             var roomName = document.querySelector('#room-name-input').value;
-            window.location.pathname = '/room/' + roomName + '/';
+            if (roomName) {
+                window.location.pathname = '/room/' + roomName + '/';
+            } else {
+                alert('Please enter a Room ID.');
+            }
         };
     </script>
 </body>

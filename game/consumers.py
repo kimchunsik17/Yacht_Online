@@ -71,18 +71,6 @@ class GameConsumer(AsyncWebsocketConsumer):
             self.channel_name
         )
 
-    def get_user_id_from_scope(self):
-        if self.scope['user'].is_authenticated:
-            return self.scope['user'].id
-        
-        # Check session for guest user ID
-        session = self.scope.get('session')
-        if session:
-            guest_id = session.get('guest_user_id')
-            if guest_id:
-                return int(guest_id)
-        return None
-
     async def receive(self, text_data):
         try:
             data = json.loads(text_data)
@@ -94,10 +82,9 @@ class GameConsumer(AsyncWebsocketConsumer):
                  await self.send_error("Game session not found.")
                  return
 
-            current_player_id = self.get_user_id_from_scope()
+            current_player_id = self.scope['user'].id if self.scope['user'].is_authenticated else None
             match_turn_id = self.match.current_turn_player.id if self.match.current_turn_player else None
             
-            # Check turn logic (Skip for next_game action as it might be sent by non-turn player)
             if action != 'next_game' and match_turn_id != current_player_id:
                 await self.send_error("It's not your turn.")
                 return
@@ -303,7 +290,6 @@ class GameConsumer(AsyncWebsocketConsumer):
         for action in actions:
             await asyncio.sleep(0.7) 
             
-            # Send commentary if exists (pre-calculated)
             if action.get('commentary'):
                 await self.channel_layer.group_send(
                     self.room_group_name,
