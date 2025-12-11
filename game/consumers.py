@@ -85,7 +85,12 @@ class GameConsumer(AsyncWebsocketConsumer):
             current_player_id = self.scope['user'].id if self.scope['user'].is_authenticated else None
             match_turn_id = self.match.current_turn_player.id if self.match.current_turn_player else None
             
-            if action != 'next_game' and match_turn_id != current_player_id:
+            # Check turn logic (Skip for next_game action as it might be sent by non-turn player)
+            # Also allow chat messages regardless of turn
+            is_chat = 'message' in data
+            if not is_chat and action != 'next_game' and match_turn_id != current_player_id:
+                # Debug logging
+                print(f"Turn Error: Match Turn ID: {match_turn_id}, Current User ID: {current_player_id}")
                 await self.send_error("It's not your turn.")
                 return
 

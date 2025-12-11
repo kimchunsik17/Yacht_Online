@@ -21,6 +21,7 @@ def create_match(request):
         user_obj.save()
         # Store guest user ID in session for client-side identification
         request.session['guest_user_id'] = str(user_obj.id)
+        request.session.modified = True # Ensure session is saved
     
     match = Match.objects.create(player1=user_obj, current_turn_player=user_obj)
     
