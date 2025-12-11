@@ -50,11 +50,13 @@ class GameConsumer(AsyncWebsocketConsumer):
             await self.accept() 
             
             player_id = self.match.current_turn_player.id if self.match.current_turn_player else None
+            
+            # Send initial state with both players data
             await self.send_game_state_to_channel(self.game_session.game_state, player_id)
 
             # If AI's turn immediately, trigger AI move
             if self.match.current_turn_player == self.ai_user:
-                await self.trigger_ai_turn()
+                asyncio.create_task(self.trigger_ai_turn())
 
         except Exception as e:
             error_msg = f"Error in connect: {str(e)}\n"
@@ -69,23 +71,34 @@ class GameConsumer(AsyncWebsocketConsumer):
             self.channel_name
         )
 
+    def get_user_id_from_scope(self):
+        if self.scope['user'].is_authenticated:
+            return self.scope['user'].id
+        
+        # Check session for guest user ID
+        session = self.scope.get('session')
+        if session:
+            guest_id = session.get('guest_user_id')
+            if guest_id:
+                return int(guest_id)
+        return None
+
     async def receive(self, text_data):
         try:
             data = json.loads(text_data)
             action = data.get('action')
             
-            # OPTIMIZATION: Load game data ONCE per request
             self.game_session, self.match = await self.get_game_data(self.room_name)
             
             if not self.game_session or not self.match:
                  await self.send_error("Game session not found.")
                  return
 
-            current_player_id = self.scope['user'].id if self.scope['user'].is_authenticated else None
+            current_player_id = self.get_user_id_from_scope()
             match_turn_id = self.match.current_turn_player.id if self.match.current_turn_player else None
             
-            # Check turn logic
-            if match_turn_id != current_player_id:
+            # Check turn logic (Skip for next_game action as it might be sent by non-turn player)
+            if action != 'next_game' and match_turn_id != current_player_id:
                 await self.send_error("It's not your turn.")
                 return
 
@@ -93,6 +106,8 @@ class GameConsumer(AsyncWebsocketConsumer):
                 await self.handle_roll(data)
             elif action == 'select_score':
                 await self.handle_select_score(data)
+            elif action == 'next_game':
+                await self.handle_next_game()
             elif 'message' in data:
                 message = data.get('message')
                 await self.channel_layer.group_send(
@@ -109,13 +124,22 @@ class GameConsumer(AsyncWebsocketConsumer):
             logging.error(error_msg)
             await self.send_error("Server error processing request.")
 
+    def get_current_player_key(self):
+        if self.match.current_turn_player == self.match.player1:
+            return 'player1'
+        return 'player2'
+
     async def handle_roll(self, data):
         keep_indices = data.get('keep_indices', [])
         
-        # OPTIMIZATION: Removed redundant get_game_data call
-        # self.game_session and self.match are already populated in receive()
+        player_key = self.get_current_player_key()
+        player_state = self.game_session.game_state.get(player_key)
         
-        engine = YachtGameEngine.from_dict(self.game_session.game_state)
+        if not player_state:
+             await self.send_error(f"Game state corrupted for {player_key}")
+             return
+
+        engine = YachtGameEngine.from_dict(player_state)
         
         try:
             if engine.rolls_left <= 0:
@@ -123,10 +147,12 @@ class GameConsumer(AsyncWebsocketConsumer):
                 return
 
             engine.roll_dice(keep_indices)
-            await self.save_game_state(engine.to_dict())
+            
+            self.game_session.game_state[player_key] = engine.to_dict()
+            await self.save_game_state(self.game_session.game_state)
             
             player_id = self.match.current_turn_player.id if self.match.current_turn_player else None
-            await self.send_game_state_to_group(engine.to_dict(), player_id)
+            await self.send_game_state_to_group(self.game_session.game_state, player_id)
             
         except ValueError as e:
             await self.send_error(str(e))
@@ -134,9 +160,10 @@ class GameConsumer(AsyncWebsocketConsumer):
     async def handle_select_score(self, data):
         category = data.get('category')
         
-        # OPTIMIZATION: Removed redundant get_game_data call
+        player_key = self.get_current_player_key()
+        player_state = self.game_session.game_state.get(player_key)
         
-        engine = YachtGameEngine.from_dict(self.game_session.game_state)
+        engine = YachtGameEngine.from_dict(player_state)
         
         try:
             if category not in YachtGameEngine.SCORE_CATEGORIES or engine.scores[category] is not None:
@@ -144,27 +171,68 @@ class GameConsumer(AsyncWebsocketConsumer):
                 return
 
             engine.select_score(category)
-            await self.save_game_state(engine.to_dict())
             
-            # Change turn
+            self.game_session.game_state[player_key] = engine.to_dict()
+            await self.save_game_state(self.game_session.game_state)
+            
             await self.set_next_turn()
             
-            # Refresh match object after turn change to ensure we have the correct current_turn_player
-            # self.match is updated inside set_next_turn, but we need to ensure local ref is good?
-            # actually set_next_turn updates self.match
+            game_ended = await self.check_and_process_game_end()
             
             player_id = self.match.current_turn_player.id if self.match.current_turn_player else None
-            await self.send_game_state_to_group(engine.to_dict(), player_id)
+            await self.send_game_state_to_group(self.game_session.game_state, player_id)
 
-            # If AI's turn, trigger AI move
-            if self.match.current_turn_player == self.ai_user:
-                await self.trigger_ai_turn()
+            if not game_ended and self.match.current_turn_player == self.ai_user:
+                asyncio.create_task(self.trigger_ai_turn())
 
         except ValueError as e:
             await self.send_error(str(e))
 
+    async def handle_next_game(self):
+        if self.match.status == 'FINISHED':
+            return
+
+        if not self.game_session.result:
+            return
+
+        current_round = self.game_session.round_number
+        next_round = current_round + 1
+        
+        ai_log = self.ai_player.simulate_full_game()
+        
+        engine1 = YachtGameEngine()
+        engine2 = YachtGameEngine()
+        initial_state = {
+            'player1': engine1.to_dict(),
+            'player2': engine2.to_dict(),
+        }
+        
+        new_session, created = await database_sync_to_async(GameSession.objects.get_or_create)(
+            match=self.match,
+            round_number=next_round,
+            defaults={
+                'game_state': initial_state,
+                'ai_actions_log': ai_log
+            }
+        )
+        
+        self.game_session = new_session
+        
+        if next_round % 2 == 1:
+            self.match.current_turn_player = self.match.player1
+        else:
+            self.match.current_turn_player = self.match.player2 if self.match.player2 else self.ai_user
+            
+        await database_sync_to_async(self.match.save)()
+        
+        player_id = self.match.current_turn_player.id if self.match.current_turn_player else None
+        await self.send_game_state_to_group(self.game_session.game_state, player_id)
+        
+        if self.match.current_turn_player == self.ai_user:
+            asyncio.create_task(self.trigger_ai_turn())
+
     async def game_update(self, event):
-        await self.send_game_state_to_channel(event['state'], event['current_turn_player_id'], event.get('potential_scores', {}))
+        await self.send_game_state_to_channel(event['state'], event['current_turn_player_id'])
 
     async def chat_message(self, event):
         await self.send(text_data=json.dumps({
@@ -178,94 +246,99 @@ class GameConsumer(AsyncWebsocketConsumer):
             'message': message
         }))
 
-    async def send_game_state_to_channel(self, game_state_dict, current_turn_player_id, potential_scores_dict=None):
-        if potential_scores_dict is None:
-            engine = YachtGameEngine.from_dict(game_state_dict)
-            potential_scores_dict = engine.calculate_potential_scores()
+    async def send_game_state_to_channel(self, game_state_dict, current_turn_player_id):
+        engine1 = YachtGameEngine.from_dict(game_state_dict['player1'])
+        pot1 = engine1.calculate_potential_scores()
+        
+        engine2 = YachtGameEngine.from_dict(game_state_dict['player2'])
+        pot2 = engine2.calculate_potential_scores()
+        
+        match_info = {
+            'player1_wins': self.match.player1_wins,
+            'player2_wins': self.match.player2_wins,
+            'status': self.match.status,
+            'winner_id': self.match.winner.id if self.match.winner else None,
+            'session_result': self.game_session.result,
+            'round_number': self.game_session.round_number
+        }
 
         message = {
             'type': 'game_state',
             'state': game_state_dict,
-            'potential_scores': potential_scores_dict,
-            'current_turn_player_id': current_turn_player_id
+            'potential_scores': {
+                'player1': pot1,
+                'player2': pot2
+            },
+            'current_turn_player_id': current_turn_player_id,
+            'match_info': match_info
         }
         await self.send(text_data=json.dumps(message))
     
     async def send_game_state_to_group(self, game_state_dict, current_turn_player_id):
-        engine = YachtGameEngine.from_dict(game_state_dict)
-        potential_scores_dict = engine.calculate_potential_scores()
-
         await self.channel_layer.group_send(
             self.room_group_name,
             {
                 'type': 'game_update',
                 'state': game_state_dict,
-                'potential_scores': potential_scores_dict,
                 'current_turn_player_id': current_turn_player_id
             }
         )
     
     async def trigger_ai_turn(self):
-        await asyncio.sleep(2) # Simulate AI thinking time
-        
         self.game_session, self.match = await self.get_game_data(self.room_name)
-        engine = YachtGameEngine.from_dict(self.game_session.game_state)
-
-        potential_scores = engine.calculate_potential_scores()
-        ai_decision = self.ai_player.decide_turn(
-            engine.dice,
-            engine.rolls_left,
-            engine.scores,
-            potential_scores
-        )
-        print(f"AI Decision: {ai_decision}")
         
-        player_id = self.match.current_turn_player.id if self.match.current_turn_player else None
+        current_p2_round = self.game_session.game_state['player2']['round']
+        
+        if not self.game_session.ai_actions_log or current_p2_round > len(self.game_session.ai_actions_log):
+            logging.error("AI Log missing or round out of bounds")
+            return
 
-        if ai_decision['action'] == 'roll':
-            engine.roll_dice(ai_decision.get('keep_indices', []))
-            await self.save_game_state(engine.to_dict())
-            await self.send_game_state_to_group(engine.to_dict(), player_id)
+        round_log = self.game_session.ai_actions_log[current_p2_round - 1]
+        actions = round_log['actions']
+        
+        player_key = 'player2'
+        
+        engine = YachtGameEngine.from_dict(self.game_session.game_state[player_key])
+        
+        for action in actions:
+            await asyncio.sleep(0.7) 
             
-            if engine.rolls_left > 0:
-                await self.trigger_ai_turn()
-            else:
-                self.game_session, self.match = await self.get_game_data(self.room_name)
-                engine = YachtGameEngine.from_dict(self.game_session.game_state)
-                potential_scores_after_rolls = engine.calculate_potential_scores()
-                
-                ai_forced_decision = self.ai_player.decide_turn(
-                    engine.dice,
-                    engine.rolls_left,
-                    engine.scores,
-                    potential_scores_after_rolls
+            # Send commentary if exists (pre-calculated)
+            if action.get('commentary'):
+                await self.channel_layer.group_send(
+                    self.room_group_name,
+                    {
+                        'type': 'chat_message',
+                        'message': action['commentary']
+                    }
                 )
-                if ai_forced_decision['action'] == 'select_score':
-                    engine.select_score(ai_forced_decision['score_category'])
-                    await self.save_game_state(engine.to_dict())
-                    await self.set_next_turn()
-                    
-                    player_id = self.match.current_turn_player.id if self.match.current_turn_player else None
-                    await self.send_game_state_to_group(engine.to_dict(), player_id)
-                else:
-                    logging.error("AI failed to select score after max rolls.")
-        
-        elif ai_decision['action'] == 'select_score':
-            engine.select_score(ai_decision['score_category'])
-            await self.save_game_state(engine.to_dict())
-            await self.set_next_turn()
             
-            player_id = self.match.current_turn_player.id if self.match.current_turn_player else None
-            await self.send_game_state_to_group(engine.to_dict(), player_id)
+            if action['type'] == 'roll':
+                engine.dice = action['dice_after']
+                engine.rolls_left -= 1
+                
+                self.game_session.game_state[player_key] = engine.to_dict()
+                await self.save_game_state(self.game_session.game_state)
+                
+                player_id = self.match.current_turn_player.id if self.match.current_turn_player else None
+                await self.send_game_state_to_group(self.game_session.game_state, player_id)
+                
+            elif action['type'] == 'select':
+                self.game_session.game_state[player_key] = action['engine_state']
+                await self.save_game_state(self.game_session.game_state)
+                
+                await self.set_next_turn()
+                await self.check_and_process_game_end()
+                
+                player_id = self.match.current_turn_player.id if self.match.current_turn_player else None
+                await self.send_game_state_to_group(self.game_session.game_state, player_id)
 
     @database_sync_to_async
     def get_game_data(self, room_name):
         try:
-            match_obj = Match.objects.select_related('player1', 'player2', 'current_turn_player').get(id=room_name)
-            game_session_obj = GameSession.objects.get(match=match_obj)
+            match_obj = Match.objects.select_related('player1', 'player2', 'current_turn_player', 'winner').get(id=room_name)
+            game_session_obj = GameSession.objects.filter(match=match_obj).order_by('-round_number').first()
             return game_session_obj, match_obj
-        except (GameSession.DoesNotExist, Match.DoesNotExist):
-            return None, None
         except Exception as e:
             logging.error(f"Error getting game data: {e}")
             return None, None
@@ -291,3 +364,43 @@ class GameConsumer(AsyncWebsocketConsumer):
     def save_game_state(self, state):
         self.game_session.game_state = state
         self.game_session.save()
+
+    async def check_and_process_game_end(self):
+        state = self.game_session.game_state
+        engine1 = YachtGameEngine.from_dict(state['player1'])
+        engine2 = YachtGameEngine.from_dict(state['player2'])
+        
+        if engine1.game_over and engine2.game_over:
+            score1 = engine1.total_score
+            score2 = engine2.total_score
+            
+            print(f"DEBUG: Game End. P1: {score1}, P2: {score2}") # DEBUG LOG
+            
+            if not self.game_session.result:
+                if score1 > score2:
+                    self.match.player1_wins += 1
+                    self.game_session.result = 'P1_WIN'
+                    print("DEBUG: P1 Wins Round")
+                elif score2 > score1:
+                    self.match.player2_wins += 1
+                    self.game_session.result = 'P2_WIN'
+                    print("DEBUG: P2 Wins Round")
+                else:
+                    self.game_session.result = 'DRAW'
+                    print("DEBUG: Draw Round")
+                
+                await database_sync_to_async(self.match.save)()
+                await database_sync_to_async(self.game_session.save)()
+                
+                if self.match.player1_wins >= 2:
+                    self.match.status = 'FINISHED'
+                    self.match.winner = self.match.player1
+                elif self.match.player2_wins >= 2:
+                    self.match.status = 'FINISHED'
+                    self.match.winner = self.match.player2
+                
+                await database_sync_to_async(self.match.save)()
+            
+            return True
+            
+        return False

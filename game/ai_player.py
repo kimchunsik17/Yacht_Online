@@ -1,80 +1,174 @@
-import google.generativeai as genai
-import os
+import random
+import copy
 import json
 
 class AIPlayer:
-    def __init__(self, api_key=None):
-        if api_key is None:
-            api_key = os.getenv("GEMINI_API_KEY")
-        
-        if not api_key or api_key == "YOUR_GEMINI_API_KEY_HERE":
-            self.model = None
-            print("Warning: GEMINI_API_KEY is not set. AI functionality will be disabled.")
-        else:
-            genai.configure(api_key=api_key)
-            self.model = genai.GenerativeModel('gemini-pro')
+    def __init__(self):
+        pass
 
-    def decide_turn(self, dice, rolls_left, scores, potential_scores):
+    def simulate_full_game(self):
         """
-        Decides the AI's move using Gemini.
-        :param dice: Current dice values [d1, d2, d3, d4, d5]
-        :param rolls_left: Number of rolls left (0-2)
-        :param scores: Current scoreboard state (dict)
-        :param potential_scores: Potential scores for current dice (dict)
-        :return: JSON object with action.
+        Simulates a full 12-round game of Yacht and returns the action log.
         """
-        if not self.model:
-             # Fallback logic if API is not available
-            return self._fallback_logic(dice, rolls_left, potential_scores)
-
-        prompt = self._construct_prompt(dice, rolls_left, scores, potential_scores)
+        from .engine import YachtGameEngine 
         
-        try:
-            response = self.model.generate_content(prompt)
-            # Basic cleanup for JSON parsing
-            text = response.text.strip()
-            if text.startswith("```json"):
-                text = text[7:-3]
-            elif text.startswith("```"):
-                text = text[3:-3]
+        engine = YachtGameEngine()
+        game_log = []
+
+        for r in range(1, 13):
+            round_actions = []
             
-            return json.loads(text)
-        except Exception as e:
-            print(f"Gemini API Error: {e}")
-            return self._fallback_logic(dice, rolls_left, potential_scores)
+            sim_engine = YachtGameEngine.from_dict(engine.to_dict()) 
+            
+            while True:
+                # Decide move with strategy info
+                decision = self._decide_turn_heuristic(sim_engine.dice, sim_engine.rolls_left, sim_engine.scores, sim_engine.calculate_potential_scores())
+                
+                # Generate rule-based commentary immediately
+                commentary = self.get_commentary(
+                    sim_engine.dice,
+                    sim_engine.rolls_left,
+                    sim_engine.scores,
+                    sim_engine.calculate_potential_scores(),
+                    decision
+                )
 
-    def _construct_prompt(self, dice, rolls_left, scores, potential_scores):
-        return f"""
-        You are playing a game of Yacht (Yahtzee).
-        Current Dice: {dice}
-        Rolls Left: {rolls_left}
-        
-        Current Scoreboard (None means open):
-        {json.dumps(scores, indent=2)}
-        
-        Potential Scores if you stop now:
-        {json.dumps(potential_scores, indent=2)}
-        
-        Decide your move.
-        If rolls_left > 0, you can choose to "roll" again, selecting which dice to keep.
-        Or you can "select_score" to end your turn and take points.
-        
-        Goal: Maximize total score. Be strategic.
-        
-        Output strictly in JSON format:
-        {{
-            "action": "roll" or "select_score",
-            "keep_indices": [0, 1] (only if action is roll, indices of dice to keep 0-4),
-            "score_category": "Name" (only if action is select_score, must be one of the open categories)
-        }}
-        """
+                if decision['action'] == 'roll':
+                    keep_indices = decision['keep_indices']
+                    
+                    action_entry = {
+                        "type": "roll",
+                        "dice_before": sim_engine.dice.copy(),
+                        "keep_indices": keep_indices,
+                        "commentary": commentary
+                    }
+                    
+                    sim_engine.roll_dice(keep_indices) 
+                    action_entry["dice_after"] = sim_engine.dice.copy()
+                    
+                    round_actions.append(action_entry)
+                    
+                elif decision['action'] == 'select_score':
+                    category = decision['score_category']
+                    
+                    score = sim_engine.select_score(category) 
+                    
+                    action_entry = {
+                        "type": "select",
+                        "category": category,
+                        "score": score,
+                        "engine_state": sim_engine.to_dict(),
+                        "commentary": commentary
+                    }
+                    round_actions.append(action_entry)
+                    
+                    engine.dice = sim_engine.dice
+                    engine.rolls_left = sim_engine.rolls_left
+                    engine.scores = sim_engine.scores
+                    engine.bonus_score = sim_engine.bonus_score
+                    engine.total_score = sim_engine.total_score
+                    engine.round = sim_engine.round
+                    engine.game_over = sim_engine.game_over
+                    
+                    break 
+            
+            game_log.append({
+                "round": r,
+                "actions": round_actions
+            })
+            
+            if engine.game_over:
+                break
+                
+        return game_log
 
-    def _fallback_logic(self, dice, rolls_left, potential_scores):
-        # Very dumb fallback
+    def _decide_turn_heuristic(self, dice, rolls_left, scores, potential_scores):
+        counts = [0] * 7
+        for d in dice:
+            counts[d] += 1
+        
+        # 1. Yacht
+        for i in range(1, 7):
+            if counts[i] == 5 and scores['Yacht'] is None:
+                return {"action": "select_score", "score_category": "Yacht", "strategy": "Yacht"}
+
+        # 2. Rolls left > 0 -> Try to improve
         if rolls_left > 0:
-            return {"action": "roll", "keep_indices": []}
-        else:
-            # Pick first available
-            for cat, score in potential_scores.items():
-                return {"action": "select_score", "score_category": cat}
-        return {"action": "error"}
+            keep, strategy = self._get_keep_indices(dice, scores, counts)
+            return {"action": "roll", "keep_indices": keep, "strategy": strategy}
+        
+        # 3. Select Best
+        best = self._pick_best_category(scores, potential_scores)
+        return {"action": "select_score", "score_category": best, "strategy": "Maximize Score"}
+
+    def _get_keep_indices(self, dice, scores, counts):
+        # Strategy: Keep duplicates
+        max_count = 0
+        target = 0
+        for i in range(1, 7):
+            if counts[i] > max_count:
+                max_count = counts[i]
+                target = i
+            elif counts[i] == max_count:
+                if i > target: target = i 
+        
+        if max_count >= 2:
+            indices = [i for i, d in enumerate(dice) if d == target]
+            return indices, f"Keep {target}s"
+        
+        # Keep high numbers (4,5,6)
+        indices = [i for i, d in enumerate(dice) if d >= 4]
+        if indices:
+            return indices, "Keep High Numbers"
+        
+        return [], "Re-roll All"
+
+    def _pick_best_category(self, scores, potential_scores):
+        available = {k: v for k, v in potential_scores.items() if scores[k] is None}
+        if not available: return None
+        
+        if available.get('Yacht') == 50: return 'Yacht'
+        if available.get('Large Straight') == 30: return 'Large Straight'
+        if available.get('Small Straight') == 15: return 'Small Straight'
+        if available.get('Full House', 0) > 0: return 'Full House'
+        if available.get('4 of a Kind', 0) > 18: return '4 of a Kind'
+        
+        for cat in ['Sixes', 'Fives', 'Fours']:
+            if cat in available and available[cat] >= 8: return cat
+            
+        return max(available, key=available.get)
+
+    def get_commentary(self, dice, rolls_left, scores, potential_scores, ai_decision):
+        """
+        Generates rule-based commentary.
+        """
+        action = ai_decision['action']
+        strategy = ai_decision.get('strategy', '')
+        
+        if action == 'roll':
+            keep_indices = ai_decision.get('keep_indices', [])
+            kept_values = [dice[i] for i in keep_indices]
+            
+            if not keep_indices:
+                return "AI: 마음에 드는 게 없어서 전부 다시 굴릴게요."
+            
+            if "Keep" in strategy:
+                return f"AI: {strategy} 전략으로 {kept_values}를 유지하고 나머지를 굴립니다."
+            
+            return f"AI: {kept_values}는 남겨두고 나머지를 다시 굴려볼게요."
+            
+        elif action == 'select_score':
+            category = ai_decision.get('score_category')
+            score = potential_scores.get(category, 0)
+            
+            if category == 'Yacht' and score == 50:
+                return "AI: 야추(Yacht)! 50점 획득합니다!"
+            if category == 'Large Straight' and score == 30:
+                return "AI: 라지 스트레이트 성공! 30점 가져갑니다."
+            
+            if score == 0:
+                return f"AI: 아쉽지만 {category}에 0점을 기록합니다."
+            
+            return f"AI: {category}에 {score}점을 기록할게요."
+            
+        return ""

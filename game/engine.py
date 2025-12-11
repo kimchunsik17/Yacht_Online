@@ -7,8 +7,9 @@ class YachtGameEngine:
     ]
 
     def __init__(self):
-        self.dice = [1, 1, 1, 1, 1]
-        self.rolls_left = 3
+        # Initial roll: dice are randomized, 2 rolls left
+        self.dice = [random.randint(1, 6) for _ in range(5)]
+        self.rolls_left = 2
         self.scores = {category: None for category in self.SCORE_CATEGORIES} # None means not scored yet
         self.bonus_score = 0
         self.total_score = 0
@@ -65,11 +66,10 @@ class YachtGameEngine:
         
         # Reset for next turn
         self.round += 1
-        self.rolls_left = 3
-        self.dice = [1, 1, 1, 1, 1] # Or random? Usually reset.
+        self.rolls_left = 2
+        self.dice = [random.randint(1, 6) for _ in range(5)] 
         
         # Check game over (12 rounds for 12 categories)
-        # Actually standard Yacht has 12 categories.
         if all(score is not None for score in self.scores.values()):
             self.game_over = True
 
@@ -165,9 +165,9 @@ class YachtGameEngine:
 
     def to_dict(self):
         return {
-            "dice": self.dice,
+            "dice": list(self.dice), # Copy list
             "rolls_left": self.rolls_left,
-            "scores": self.scores,
+            "scores": self.scores.copy(), # Copy dict
             "bonus_score": self.bonus_score,
             "total_score": self.total_score,
             "round": self.round,
@@ -177,9 +177,13 @@ class YachtGameEngine:
     @classmethod
     def from_dict(cls, data):
         engine = cls()
-        engine.dice = data.get("dice", [1, 1, 1, 1, 1])
-        engine.rolls_left = data.get("rolls_left", 3)
-        engine.scores = data.get("scores", {category: None for category in cls.SCORE_CATEGORIES})
+        engine.dice = list(data.get("dice", [random.randint(1, 6) for _ in range(5)]))
+        engine.rolls_left = data.get("rolls_left", 2)
+        # scores should be a new dict, but data.get returns reference if not copied
+        # So we ensure copy here too
+        scores_data = data.get("scores", {category: None for category in cls.SCORE_CATEGORIES})
+        engine.scores = scores_data.copy()
+        
         engine.bonus_score = data.get("bonus_score", 0)
         engine.total_score = data.get("total_score", 0)
         engine.round = data.get("round", 1)

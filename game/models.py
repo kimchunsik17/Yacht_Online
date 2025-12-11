@@ -27,6 +27,8 @@ class GameSession(models.Model):
     round_number = models.IntegerField(default=1) # 1, 2, 3 (within match)
     # Store engine state: dice, scores, turn, etc.
     game_state = models.JSONField(default=dict) 
+    # Store pre-calculated AI moves for the entire session
+    ai_actions_log = models.JSONField(default=list, blank=True)
     result = models.CharField(max_length=20, null=True, blank=True) # P1_WIN, P2_WIN, DRAW
     created_at = models.DateTimeField(auto_now_add=True)
 
