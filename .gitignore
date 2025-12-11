@@ -18,6 +18,8 @@ db.sqlite3
 # Logs
 *.log
 server_error.log
+DEVELOPMENT_LOG_2.md
+DEVEOPMENT_GEMINI_LOG.md
 
 # OS specific
 .DS_Store

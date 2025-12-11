@@ -316,11 +316,11 @@
                 const scoredValue = currentScores[category];
                 const potentialValue = currentPotentialScores[category] !== undefined ? currentPotentialScores[category] : '';
 
-                row.innerHTML = "`
+                row.innerHTML = `
                     <td>${category}</td>
                     <td>${scoredValue !== null ? scoredValue : '-'}</td>
-                    <td id=\"potential-${category.replace(/\s/g, '-')}\" class=\"${scoredValue === null ? 'selectable' : 'scored'}\" data-category=\"${category}\">${potentialValue}</td>
-                `";
+                    <td id="potential-${category.replace(/\s/g, '-')}" class="${scoredValue === null ? 'selectable' : 'scored'}" data-category="${category}">${potentialValue}</td>
+                `;
                 
                 const potentialCell = row.querySelector(`td[data-category="${category}"]`);
                 // Only allow selecting if not scored, game not over, user's turn, AND not rolling
